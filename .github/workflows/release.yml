@@ -27,16 +27,20 @@ jobs:
           echo "APP_VERSION=$V" >> "$GITHUB_ENV"
 
       - name: Build app
-        shell: cmd
+        shell: pwsh
         run: |
-          copy /Y assets\app_icon.ico windows\runner\resources\app_icon.ico
+          Copy-Item assets\app_icon.ico windows\runner\resources\app_icon.ico -Force
           flutter pub get
-          flutter build windows --release --build-name=%APP_VERSION%
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          flutter build windows --release --build-name=$env:APP_VERSION
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Add Visual C++ runtime
-        shell: cmd
+        shell: pwsh
         run: |
-          for %%F in (msvcp140.dll vcruntime140.dll vcruntime140_1.dll) do copy /Y "%SystemRoot%\System32\%%F" build\windows\x64\runner\Release\
+          foreach ($f in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
+            Copy-Item "$env:SystemRoot\System32\$f" build\windows\x64\runner\Release\ -Force
+          }
 
       # ---- SignPath: sign the app files here once the project is approved ----
 

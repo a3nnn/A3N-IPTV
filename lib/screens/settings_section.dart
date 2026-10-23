@@ -54,6 +54,7 @@ class SettingsSection extends StatelessWidget {
             _InfoRow('Expires', acc?.expDate != null ? fmtDate(acc!.expDate!) : 'Unlimited'),
             if (acc != null && acc.maxConnections > 0)
               _InfoRow('Connections', '${acc.activeConnections} / ${acc.maxConnections}'),
+            _InfoRow('Device ID', Storage.deviceId),
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,

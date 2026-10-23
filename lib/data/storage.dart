@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Storage {
@@ -40,4 +42,27 @@ class Storage {
 
   static double get volume => _p.getDouble('volume') ?? 100;
   static Future<void> setVolume(double v) => _p.setDouble('volume', v);
+
+  /// Random id created the first time the app runs on this computer.
+  static String get deviceId {
+    var id = _p.getString('device_id');
+    if (id == null || id.length < 16) {
+      final r = Random.secure();
+      id = List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+      _p.setString('device_id', id);
+    }
+    return id;
+  }
+
+  static bool get licenseBlocked => _p.getBool('license_blocked') ?? false;
+  static String? get licenseMessage => _p.getString('license_message');
+
+  static Future<void> setLicense(bool blocked, String? message) async {
+    await _p.setBool('license_blocked', blocked);
+    if (message == null || message.isEmpty) {
+      await _p.remove('license_message');
+    } else {
+      await _p.setString('license_message', message);
+    }
+  }
 }

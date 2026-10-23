@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../config.dart';
+import '../data/license_service.dart';
 import '../data/storage.dart';
 import '../data/xtream_api.dart';
 import '../utils.dart';
 import '../widgets/brand.dart';
 import '../widgets/common.dart';
+import 'blocked_screen.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -57,7 +59,14 @@ class _LoginScreenState extends State<LoginScreen> {
       await Storage.saveCredentials(u, p);
       Session.api = api;
       Session.account = account;
+      final license = await LicenseService.check(username: u);
       if (!mounted) return;
+      if (license.blocked) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => BlockedScreen(message: license.message)),
+        );
+        return;
+      }
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
     } catch (e) {
       if (!mounted) return;
@@ -73,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
+          const Positioned(top: 18, left: 18, child: SignatureBadge()),
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -84,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          const Positioned(top: 18, left: 18, child: SignatureBadge()),
           Center(
             child: SingleChildScrollView(
               child: Container(

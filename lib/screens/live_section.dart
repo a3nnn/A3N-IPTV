@@ -559,12 +559,9 @@ class _LiveSectionState extends State<LiveSection> {
                               const Spacer(),
                               const ClockText(),
                               const SizedBox(width: 18),
-                              const VolumeControl(),
-                              const SizedBox(width: 8),
-                              RoundIconButton(
-                                icon: Icons.fullscreen_exit_rounded,
-                                tooltip: 'Exit full screen (Esc)',
-                                onTap: () => _setFullscreen(false),
+                              Text(
+                                '▲ ▼  channel     ◀ ▶  volume     M  mute',
+                                style: TextStyle(fontSize: 12, color: fade(Colors.white, 0.6)),
                               ),
                             ],
                           ),
@@ -631,9 +628,17 @@ class _LiveSectionState extends State<LiveSection> {
                                     ],
                                   ),
                                 ),
-                                Text(
-                                  '▲ ▼  channel     ◀ ▶  volume     M  mute',
-                                  style: TextStyle(fontSize: 12, color: fade(Colors.white, 0.5)),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const VolumeControl(),
+                                    const SizedBox(width: 8),
+                                    RoundIconButton(
+                                      icon: Icons.fullscreen_exit_rounded,
+                                      tooltip: 'Exit full screen (Esc)',
+                                      onTap: () => _setFullscreen(false),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),

@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../config.dart';
+import '../data/license_service.dart';
+import '../data/storage.dart';
 import '../data/xtream_api.dart';
 import '../player/player_service.dart';
 import '../utils.dart';
 import '../widgets/common.dart';
+import 'blocked_screen.dart';
 import 'catalog_sections.dart';
 import 'live_section.dart';
 import 'settings_section.dart';
@@ -20,6 +26,39 @@ class _HomeScreenState extends State<HomeScreen> {
   // One key per section so the live section keeps its state when it
   // switches between normal and full-window layouts.
   final List<GlobalKey> _keys = List.generate(4, (_) => GlobalKey());
+  Timer? _licenseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Re-check every 10 minutes so a block takes effect while the app is open.
+    _licenseTimer = Timer.periodic(const Duration(minutes: 10), (_) => _checkLicense());
+  }
+
+  @override
+  void dispose() {
+    _licenseTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkLicense() async {
+    final s = await LicenseService.check(username: Storage.username ?? '');
+    if (!s.blocked || !mounted) return;
+    _licenseTimer?.cancel();
+    final player = PlayerService.instance;
+    await player.stop();
+    if (player.fullscreen.value) {
+      player.fullscreen.value = false;
+      try {
+        await windowManager.setFullScreen(false);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => BlockedScreen(message: s.message)),
+      (_) => false,
+    );
+  }
 
   void _go(int i) {
     if (i == _index) return;
@@ -87,8 +126,6 @@ class TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const SignatureBadge(),
-          const SizedBox(width: 14),
           if (leading != null) ...[leading!, const SizedBox(width: 6)],
           Expanded(
             child: Text(

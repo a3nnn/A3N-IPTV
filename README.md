@@ -41,7 +41,9 @@ Code signing: application to SignPath Foundation pending.
 - Committer, reviewer and approver: [@a3nnn](https://github.com/a3nnn)
 
 **Privacy policy**
-This program will not transfer any information to other networked systems unless specifically requested by the user. It only connects to the IPTV server configured in `lib/config.dart`, to sign in with the credentials the user enters and to load channels, the program guide and streams. Credentials are stored locally on the user's computer only.
+The app connects to the IPTV server configured in `lib/config.dart` to sign in and load channels, the program guide and streams. Credentials are stored locally on the user's computer.
+
+When usage monitoring is enabled (`supabaseUrl` in `lib/config.dart`), each time the app starts, and every 10 minutes while it runs, it sends to the maintainer's database: the signed-in username, the computer name, a random device ID, the Windows version, the app version, the IP address, and the approximate location of that IP (country, city, internet provider, looked up via ipwho.is). This is used to see who is using the app and to disable the app on specific devices. No other data is collected.
 
 ## License
 

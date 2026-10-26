@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/storage.dart';
 import '../player/player_service.dart';
 import '../utils.dart';
+import '../l10n.dart';
 
 /// Mute button + volume slider in a dark pill, for the video overlays.
 class VolumeControl extends StatefulWidget {
@@ -39,7 +40,7 @@ class _VolumeControlState extends State<VolumeControl> {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                tooltip: v <= 0 ? 'Unmute' : 'Mute',
+                tooltip: v <= 0 ? tr('Unmute (M)', 'إلغاء الكتم (M)') : tr('Mute (M)', 'كتم (M)'),
                 iconSize: 22,
                 color: Colors.white,
                 onPressed: _svc.toggleMute,

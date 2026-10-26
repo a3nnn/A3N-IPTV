@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -13,7 +14,9 @@ import '../player/player_service.dart';
 import '../utils.dart';
 import '../widgets/category_panel.dart';
 import '../widgets/common.dart';
+import '../widgets/stream_info.dart';
 import '../widgets/volume_control.dart';
+import '../l10n.dart';
 
 const String _favId = '__fav';
 const String _allId = '__all';
@@ -142,8 +145,8 @@ class _LiveSectionState extends State<LiveSection> {
     } else {
       list = _all.where((c) => c.categoryId == _categoryId);
     }
-    final q = _query.trim().toLowerCase();
-    if (q.isNotEmpty) list = list.where((c) => c.name.toLowerCase().contains(q));
+    final q = searchNorm(_query.trim());
+    if (q.isNotEmpty) list = list.where((c) => searchNorm(c.name).contains(q));
     _visible = list.toList();
   }
 
@@ -248,7 +251,10 @@ class _LiveSectionState extends State<LiveSection> {
   KeyEventResult _onFullscreenKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
     final k = event.logicalKey;
-    if (k == LogicalKeyboardKey.escape || k == LogicalKeyboardKey.goBack || k == LogicalKeyboardKey.backspace) {
+    if (k == LogicalKeyboardKey.escape ||
+        k == LogicalKeyboardKey.goBack ||
+        k == LogicalKeyboardKey.backspace ||
+        k == LogicalKeyboardKey.keyF) {
       _setFullscreen(false);
       return KeyEventResult.handled;
     }
@@ -311,9 +317,9 @@ class _LiveSectionState extends State<LiveSection> {
       onSelect: _selectCategory,
       entries: [
         CategoryEntry(
-            id: _favId, name: 'Favorites', count: favCount, fixed: true,
+            id: _favId, name: tr('Favorites', 'المفضلة'), count: favCount, fixed: true,
             icon: Icons.star_rounded, iconColor: AppConfig.accent),
-        CategoryEntry(id: _allId, name: 'All Channels', count: _all.length, fixed: true),
+        CategoryEntry(id: _allId, name: tr('All Channels', 'كل القنوات'), count: _all.length, fixed: true),
         ..._categories.map((c) => CategoryEntry(id: c.id, name: c.name, count: _counts[c.id] ?? 0)),
       ],
     );
@@ -325,7 +331,7 @@ class _LiveSectionState extends State<LiveSection> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
           child: SearchField(
-            hint: 'Search channels',
+            hint: tr('Search channels', 'ابحث في القنوات'),
             controller: _searchCtrl,
             onChanged: (v) => setState(() {
               _query = v;
@@ -338,8 +344,8 @@ class _LiveSectionState extends State<LiveSection> {
               ? Center(
                   child: Text(
                     _categoryId == _favId
-                        ? 'No favorites yet.\nClick the star next to a channel to add it.'
-                        : 'No channels found',
+                        ? tr('No favorites yet.\nClick the star next to a channel to add it.', 'ما فيه مفضلة للحين.\nاضغط النجمة جنب القناة عشان تضيفها.')
+                        : tr('No channels found', 'لا توجد قنوات'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: AppConfig.textSecondary),
                   ),
@@ -382,7 +388,7 @@ class _LiveSectionState extends State<LiveSection> {
       title: c.name,
       subtitle: selected ? _now?.title : null,
       trailing: IconButton(
-        tooltip: fav ? 'Remove from favorites' : 'Add to favorites',
+        tooltip: fav ? tr('Remove from favorites', 'إزالة من المفضلة') : tr('Add to favorites', 'إضافة للمفضلة'),
         onPressed: () => _toggleFavorite(c),
         icon: Icon(
           fav ? Icons.star_rounded : Icons.star_outline_rounded,
@@ -446,25 +452,36 @@ class _LiveSectionState extends State<LiveSection> {
     );
   }
 
-  Widget _emptyPreview() => const Center(
+  Widget _emptyPreview() => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.live_tv_rounded, size: 48, color: AppConfig.textSecondary),
-            SizedBox(height: 10),
-            Text('Select a channel', style: TextStyle(color: AppConfig.textSecondary)),
+            const Icon(Icons.live_tv_rounded, size: 48, color: AppConfig.textSecondary),
+            const SizedBox(height: 10),
+            Text(tr('Select a channel', 'اختر قناة'), style: const TextStyle(color: AppConfig.textSecondary)),
           ],
         ),
       );
 
+  /// Mouse wheel over the video = volume.
+  void _onWheel(PointerSignalEvent e) {
+    if (e is PointerScrollEvent) {
+      _svc.changeVolume(e.scrollDelta.dy < 0 ? 5 : -5);
+      if (_fullscreen) _showOverlay();
+    }
+  }
+
   Widget _previewPlayer() {
-    return GestureDetector(
+    return Listener(
+      onPointerSignal: _onWheel,
+      child: GestureDetector(
       onDoubleTap: () => _setFullscreen(true),
       child: Stack(
         fit: StackFit.expand,
         children: [
           _video(),
           _bufferingIndicator(),
+          const Positioned(top: 10, left: 10, child: StreamInfoBadge(compact: true)),
           Positioned(
             right: 12,
             bottom: 12,
@@ -475,7 +492,7 @@ class _LiveSectionState extends State<LiveSection> {
                 const SizedBox(width: 8),
                 RoundIconButton(
                   icon: Icons.fullscreen_rounded,
-                  tooltip: 'Full screen',
+                  tooltip: tr('Full screen (F)', 'ملء الشاشة (F)'),
                   onTap: () => _setFullscreen(true),
                 ),
               ],
@@ -483,6 +500,7 @@ class _LiveSectionState extends State<LiveSection> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -497,14 +515,14 @@ class _LiveSectionState extends State<LiveSection> {
   Widget _buildEpg() {
     if (_epgLoading) {
       return const Align(
-        alignment: Alignment.topLeft,
+        alignment: AlignmentDirectional.topStart,
         child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
     final now = _now;
     final next = _upcoming;
     if (now == null && next.isEmpty) {
-      return const Text('No program guide for this channel', style: TextStyle(color: AppConfig.textSecondary));
+      return Text(tr('No program guide for this channel', 'لا يوجد دليل برامج لهذه القناة'), style: const TextStyle(color: AppConfig.textSecondary));
     }
     return ListView(
       children: [
@@ -522,7 +540,9 @@ class _LiveSectionState extends State<LiveSection> {
       focusNode: _fsFocus,
       autofocus: true,
       onKeyEvent: _onFullscreenKey,
-      child: MouseRegion(
+      child: Listener(
+        onPointerSignal: _onWheel,
+        child: MouseRegion(
         onHover: (_) => _showOverlay(),
         child: GestureDetector(
           onTap: _showOverlay,
@@ -554,13 +574,17 @@ class _LiveSectionState extends State<LiveSection> {
                             ),
                           ),
                           child: Row(
+                            textDirection: TextDirection.ltr,
                             children: [
                               const SignatureBadge(),
+                              const SizedBox(width: 12),
+                              StreamInfoBadge(show: _overlay),
                               const Spacer(),
                               const ClockText(),
                               const SizedBox(width: 18),
                               Text(
-                                '▲ ▼  channel     ◀ ▶  volume     M  mute',
+                                tr('▲ ▼  channel     ◀ ▶  volume     M  mute     F / Esc  exit',
+                                    '▲ ▼  القناة     ◀ ▶  الصوت     M  كتم     F / Esc  خروج'),
                                 style: TextStyle(fontSize: 12, color: fade(Colors.white, 0.6)),
                               ),
                             ],
@@ -619,7 +643,7 @@ class _LiveSectionState extends State<LiveSection> {
                                       if (next.isNotEmpty) ...[
                                         const SizedBox(height: 8),
                                         Text(
-                                          'Next  ${fmtTime(next.first.start)}   ${next.first.title}',
+                                          '${tr('Next', 'التالي')}  ${fmtTime(next.first.start)}   ${next.first.title}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(fontSize: 13, color: fade(Colors.white, 0.7)),
@@ -635,7 +659,7 @@ class _LiveSectionState extends State<LiveSection> {
                                     const SizedBox(width: 8),
                                     RoundIconButton(
                                       icon: Icons.fullscreen_exit_rounded,
-                                      tooltip: 'Exit full screen (Esc)',
+                                      tooltip: tr('Exit full screen (Esc)', 'الخروج من ملء الشاشة (Esc)'),
                                       onTap: () => _setFullscreen(false),
                                     ),
                                   ],
@@ -651,6 +675,7 @@ class _LiveSectionState extends State<LiveSection> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -678,7 +703,7 @@ class _NowCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: AppConfig.primary, borderRadius: BorderRadius.circular(4)),
-                child: const Text('NOW',
+                child: Text(tr('NOW', 'الآن'),
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.black)),
               ),
               const SizedBox(width: 10),

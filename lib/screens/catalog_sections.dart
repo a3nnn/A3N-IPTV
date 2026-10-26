@@ -2,28 +2,37 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../data/models.dart';
+import '../data/storage.dart';
+import '../data/watch_history.dart';
 import '../data/xtream_api.dart';
+import '../l10n.dart';
 import '../utils.dart';
 import '../widgets/category_panel.dart';
 import '../widgets/common.dart';
-import 'player_page.dart';
+import 'playback.dart';
 import 'series_detail_screen.dart';
 
 const String _allId = '__all';
 
 class CatalogItem {
+  final int id;
   final String title;
   final String image;
   final String categoryId;
   final double rating;
-  final void Function(BuildContext context) onOpen;
+  final Future<void> Function(BuildContext context) onOpen;
+
+  /// true = series (progress comes from its latest episode).
+  final bool isSeries;
 
   const CatalogItem({
+    required this.id,
     required this.title,
     required this.image,
     required this.categoryId,
     required this.rating,
     required this.onOpen,
+    this.isSeries = false,
   });
 }
 
@@ -47,21 +56,24 @@ class MoviesSection extends StatelessWidget {
       cats,
       movies
           .map((m) => CatalogItem(
+                id: m.id,
                 title: m.name,
                 image: m.poster,
                 categoryId: m.categoryId,
                 rating: m.rating,
-                onOpen: (ctx) => Navigator.of(ctx).push(
-                  MaterialPageRoute(builder: (_) => PlayerPage(url: api.movieUrl(m), title: m.name)),
-                ),
+                onOpen: (ctx) => playMovie(ctx, m),
               ))
           .toList(),
     );
   }
 
   @override
-  Widget build(BuildContext context) =>
-      CatalogSection(section: 'movies', load: _load, allLabel: 'All Movies', searchHint: 'Search movies');
+  Widget build(BuildContext context) => CatalogSection(
+        section: 'movies',
+        load: _load,
+        allLabel: tr('All Movies', 'كل الأفلام'),
+        searchHint: tr('Search movies', 'ابحث في الأفلام'),
+      );
 }
 
 // ------------------------------------------------------------ Series
@@ -78,10 +90,12 @@ class SeriesSection extends StatelessWidget {
       cats,
       list
           .map((s) => CatalogItem(
+                id: s.id,
                 title: s.name,
                 image: s.cover,
                 categoryId: s.categoryId,
                 rating: s.rating,
+                isSeries: true,
                 onOpen: (ctx) => Navigator.of(ctx).push(
                   MaterialPageRoute(builder: (_) => SeriesDetailScreen(series: s)),
                 ),
@@ -91,8 +105,12 @@ class SeriesSection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      CatalogSection(section: 'series', load: _load, allLabel: 'All Series', searchHint: 'Search series');
+  Widget build(BuildContext context) => CatalogSection(
+        section: 'series',
+        load: _load,
+        allLabel: tr('All Series', 'كل المسلسلات'),
+        searchHint: tr('Search series', 'ابحث في المسلسلات'),
+      );
 }
 
 // ------------------------------------------------------------ shared grid
@@ -103,7 +121,8 @@ class CatalogSection extends StatefulWidget {
   final String searchHint;
   final String section;
 
-  const CatalogSection({super.key, required this.section, required this.load, required this.allLabel, required this.searchHint});
+  const CatalogSection(
+      {super.key, required this.section, required this.load, required this.allLabel, required this.searchHint});
 
   @override
   State<CatalogSection> createState() => _CatalogSectionState();
@@ -120,6 +139,10 @@ class _CatalogSectionState extends State<CatalogSection> {
   String _categoryId = _allId;
   String _query = '';
   List<CatalogItem> _visible = [];
+
+  /// The last poster opened: highlighted and scrolled to when coming back.
+  int? _lastItemId;
+  double _gridWidth = 800;
 
   @override
   void initState() {
@@ -150,8 +173,9 @@ class _CatalogSectionState extends State<CatalogSection> {
         _data = data;
         _counts = counts;
         _loading = false;
-        _applyFilter();
+        _restoreLastPlace();
       });
+      if (_lastItemId != null) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLast());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -161,15 +185,49 @@ class _CatalogSectionState extends State<CatalogSection> {
     }
   }
 
+  void _restoreLastPlace() {
+    final cat = Storage.lastCatalogCategory(widget.section);
+    if (cat != null && (cat == _allId || _data.categories.any((c) => c.id == cat))) _categoryId = cat;
+    _applyFilter();
+    final last = Storage.lastCatalogItem(widget.section);
+    _lastItemId = (last != null && _visible.any((i) => i.id == last)) ? last : null;
+  }
+
+  void _scrollToLast({int attempt = 0}) {
+    final id = _lastItemId;
+    if (id == null || !mounted) return;
+    if (!_gridScroll.hasClients) {
+      if (attempt < 5) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLast(attempt: attempt + 1));
+      return;
+    }
+    final index = _visible.indexWhere((i) => i.id == id);
+    if (index < 0) return;
+    // Same maths as SliverGridDelegateWithMaxCrossAxisExtent below.
+    final w = (_gridWidth - 40).clamp(100.0, 10000.0);
+    final cols = (w / (180 + 16)).ceil().clamp(1, 100);
+    final cellW = (w - 16 * (cols - 1)) / cols;
+    final rowH = cellW / 0.56 + 18;
+    final pos = _gridScroll.position;
+    pos.jumpTo(((index ~/ cols) * rowH - rowH * 0.6).clamp(0.0, pos.maxScrollExtent));
+  }
+
+  Future<void> _open(CatalogItem item) async {
+    Storage.setLastCatalogItem(widget.section, item.id);
+    setState(() => _lastItemId = item.id);
+    await item.onOpen(context);
+    if (mounted) setState(() {}); // refresh the watch marks
+  }
+
   void _applyFilter() {
     Iterable<CatalogItem> list =
         _categoryId == _allId ? _data.items : _data.items.where((i) => i.categoryId == _categoryId);
-    final q = _query.trim().toLowerCase();
-    if (q.isNotEmpty) list = list.where((i) => i.title.toLowerCase().contains(q));
+    final q = searchNorm(_query.trim());
+    if (q.isNotEmpty) list = list.where((i) => searchNorm(i.title).contains(q));
     _visible = list.toList();
   }
 
   void _selectCategory(String id) {
+    Storage.setLastCatalogCategory(widget.section, id);
     setState(() {
       _categoryId = id;
       _applyFilter();
@@ -216,22 +274,32 @@ class _CatalogSectionState extends State<CatalogSection> {
               ),
               Expanded(
                 child: _visible.isEmpty
-                    ? const Center(child: Text('Nothing here', style: TextStyle(color: AppConfig.textSecondary)))
-                    : Scrollbar(
-                        controller: _gridScroll,
-                        child: GridView.builder(
+                    ? Center(
+                        child: Text(tr('Nothing here', 'لا يوجد محتوى'),
+                            style: const TextStyle(color: AppConfig.textSecondary)))
+                    : LayoutBuilder(builder: (context, box) {
+                        _gridWidth = box.maxWidth;
+                        return Scrollbar(
                           controller: _gridScroll,
-                          padding: const EdgeInsets.all(20),
-                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 180,
-                            mainAxisSpacing: 18,
-                            crossAxisSpacing: 16,
-                            childAspectRatio: 0.56,
+                          child: GridView.builder(
+                            controller: _gridScroll,
+                            padding: const EdgeInsets.all(20),
+                            cacheExtent: 500,
+                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 180,
+                              mainAxisSpacing: 18,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: 0.56,
+                            ),
+                            itemCount: _visible.length,
+                            itemBuilder: (context, i) => PosterCard(
+                              item: _visible[i],
+                              highlighted: _visible[i].id == _lastItemId,
+                              onOpen: () => _open(_visible[i]),
+                            ),
                           ),
-                          itemCount: _visible.length,
-                          itemBuilder: (context, i) => PosterCard(item: _visible[i]),
-                        ),
-                      ),
+                        );
+                      }),
               ),
             ],
           ),
@@ -243,7 +311,11 @@ class _CatalogSectionState extends State<CatalogSection> {
 
 class PosterCard extends StatefulWidget {
   final CatalogItem item;
-  const PosterCard({super.key, required this.item});
+  final VoidCallback onOpen;
+
+  /// The last poster opened in this section.
+  final bool highlighted;
+  const PosterCard({super.key, required this.item, required this.onOpen, this.highlighted = false});
 
   @override
   State<PosterCard> createState() => _PosterCardState();
@@ -255,51 +327,60 @@ class _PosterCardState extends State<PosterCard> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+    final edge = _hover
+        ? AppConfig.primary
+        : (widget.highlighted ? fade(AppConfig.primary, 0.6) : Colors.transparent);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
-        onTap: () => item.onOpen(context),
+        onTap: widget.onOpen,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                decoration: BoxDecoration(
-                  color: AppConfig.surfaceHigh,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _hover ? AppConfig.primary : Colors.transparent, width: 2),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      NetImage(url: item.image, fallbackIcon: Icons.movie_outlined, cacheWidth: 360),
-                      if (item.rating > 0)
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: fade(Colors.black, 0.7),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star_rounded, size: 12, color: AppConfig.accent),
-                                const SizedBox(width: 2),
-                                Text(item.rating.toStringAsFixed(1),
-                                    style: const TextStyle(fontSize: 11, color: Colors.white)),
-                              ],
+              child: AnimatedScale(
+                scale: _hover ? 1.04 : 1.0,
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOutCubic,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: AppConfig.surfaceHigh,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: edge, width: 2),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        NetImage(url: item.image, fallbackIcon: Icons.movie_outlined, cacheWidth: 360),
+                        ..._watchMarks(item),
+                        if (item.rating > 0)
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: fade(Colors.black, 0.7),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.star_rounded, size: 12, color: AppConfig.accent),
+                                  const SizedBox(width: 2),
+                                  Text(item.rating.toStringAsFixed(1),
+                                      style: const TextStyle(fontSize: 11, color: Colors.white)),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -320,4 +401,15 @@ class _PosterCardState extends State<PosterCard> {
       ),
     );
   }
+}
+
+/// ✓ when finished, or a thin bar showing how far it was watched.
+List<Widget> _watchMarks(CatalogItem item) {
+  final e = item.isSeries ? WatchHistory.lastOfSeries(item.id) : WatchHistory.get(WatchHistory.movieKey(item.id));
+  if (e == null) return const [];
+  return [
+    if (!item.isSeries && e.done) const PositionedDirectional(bottom: 6, start: 6, child: WatchedBadge()),
+    if (e.resumable || (item.isSeries && !e.done && e.fraction > 0))
+      Positioned(left: 0, right: 0, bottom: 0, child: WatchProgressBar(fraction: e.fraction)),
+  ];
 }

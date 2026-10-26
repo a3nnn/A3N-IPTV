@@ -4,6 +4,7 @@ import '../config.dart';
 import '../data/storage.dart';
 import '../utils.dart';
 import 'common.dart';
+import '../l10n.dart';
 
 class CategoryEntry {
   final String id;
@@ -65,7 +66,7 @@ class _CategoryPanelState extends State<CategoryPanel> {
 
     final rows = <Widget>[
       for (final e in fixed) _row(e, pinned: false),
-      if (pinned.isNotEmpty) _label('PINNED'),
+      if (pinned.isNotEmpty) _label(tr('PINNED', 'المثبتة')),
       for (final e in pinned) _row(e, pinned: true),
       if (pinned.isNotEmpty && rest.isNotEmpty) const Divider(height: 9, indent: 12, endIndent: 12),
       for (final e in rest) _row(e, pinned: false),
@@ -74,7 +75,7 @@ class _CategoryPanelState extends State<CategoryPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _label('CATEGORIES', top: 16),
+        _label(tr('CATEGORIES', 'الأقسام'), top: 16),
         Expanded(child: ListView(children: rows)),
       ],
     );
@@ -83,8 +84,8 @@ class _CategoryPanelState extends State<CategoryPanel> {
   Widget _label(String text, {double top = 10}) => Padding(
         padding: EdgeInsets.fromLTRB(16, top, 16, 6),
         child: Text(text,
-            style: const TextStyle(
-                fontSize: 11, letterSpacing: 1.4, color: AppConfig.textSecondary, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                fontSize: 11, letterSpacing: L.spacing(1.4), color: AppConfig.textSecondary, fontWeight: FontWeight.w700)),
       );
 
   Widget _row(CategoryEntry e, {required bool pinned}) {
@@ -103,7 +104,7 @@ class _CategoryPanelState extends State<CategoryPanel> {
           onTap: () => widget.onSelect(e.id),
           leading: e.icon != null
               ? Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsetsDirectional.only(end: 8),
                   child: Icon(e.icon, size: 18, color: e.iconColor ?? AppConfig.textSecondary),
                 )
               : null,
@@ -117,7 +118,7 @@ class _CategoryPanelState extends State<CategoryPanel> {
                   width: 30,
                   child: showPin
                       ? IconButton(
-                          tooltip: pinned ? 'Unpin' : 'Pin to top',
+                          tooltip: pinned ? tr('Unpin', 'إلغاء التثبيت') : tr('Pin to top', 'تثبيت فوق'),
                           padding: EdgeInsets.zero,
                           iconSize: 17,
                           onPressed: () => _togglePin(e.id),

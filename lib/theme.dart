@@ -22,7 +22,7 @@ ThemeData buildTheme() {
     useMaterial3: true,
     brightness: Brightness.dark,
     colorScheme: scheme,
-    fontFamily: 'Segoe UI',
+    fontFamily: 'Thmanyah',
     scaffoldBackgroundColor: AppConfig.background,
     dividerColor: AppConfig.divider,
     dividerTheme: const DividerThemeData(color: AppConfig.divider, thickness: 1, space: 1),

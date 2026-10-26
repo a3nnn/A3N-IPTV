@@ -6,7 +6,9 @@ import '../data/xtream_api.dart';
 import '../utils.dart';
 import '../widgets/common.dart';
 import 'home_screen.dart';
-import 'player_page.dart';
+import '../data/watch_history.dart';
+import '../l10n.dart';
+import 'playback.dart';
 
 class SeriesDetailScreen extends StatefulWidget {
   final Series series;
@@ -22,6 +24,16 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   SeriesInfo? _info;
   int? _season;
 
+  // Opens on the last episode watched (or the first one).
+  final ScrollController _listScroll = ScrollController();
+  String? _targetEpisode;
+
+  @override
+  void dispose() {
+    _listScroll.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -36,11 +48,27 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     try {
       final info = await Session.api!.seriesInfo(widget.series.id);
       if (!mounted) return;
+      final last = WatchHistory.lastOfSeries(widget.series.id);
+      int? season = info.seasons.keys.isEmpty ? null : info.seasons.keys.first;
+      String? target;
+      if (last != null) {
+        for (final entry in info.seasons.entries) {
+          final list = entry.value;
+          final i = list.indexWhere((e) => e.id == last.id);
+          if (i < 0) continue;
+          season = entry.key;
+          // Finished it? Then the next episode is the one to watch.
+          target = (last.done && i + 1 < list.length) ? list[i + 1].id : list[i].id;
+          break;
+        }
+      }
       setState(() {
         _info = info;
-        _season = info.seasons.keys.isEmpty ? null : info.seasons.keys.first;
+        _season = season;
+        _targetEpisode = target;
         _loading = false;
       });
+      if (target != null) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToTarget());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -50,15 +78,18 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     }
   }
 
-  void _play(Episode e) {
-    final api = Session.api!;
-    final label = 'S${two(e.season)}E${two(e.episodeNum)}';
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PlayerPage(
-        url: api.episodeUrl(e),
-        title: '${widget.series.name}  ·  $label${e.title.isNotEmpty ? '  ·  ${e.title}' : ''}',
-      ),
-    ));
+  void _scrollToTarget() {
+    final eps = _info?.seasons[_season] ?? const <Episode>[];
+    final i = eps.indexWhere((e) => e.id == _targetEpisode);
+    if (i < 0 || !mounted || !_listScroll.hasClients) return;
+    final pos = _listScroll.position;
+    pos.jumpTo((8 + i * 109.0 - 120).clamp(0.0, pos.maxScrollExtent));
+  }
+
+  Future<void> _play(Episode e) async {
+    setState(() => _targetEpisode = e.id);
+    await playEpisode(context, widget.series, e);
+    if (mounted) setState(() {}); // refresh the watched marks
   }
 
   @override
@@ -70,7 +101,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
           TopBar(
             title: s.name,
             leading: IconButton(
-              tooltip: 'Back',
+              tooltip: tr('Back', 'رجوع'),
               icon: const Icon(Icons.arrow_back_rounded),
               onPressed: () => Navigator.of(context).maybePop(),
             ),
@@ -130,7 +161,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         const VerticalDivider(width: 1),
         Expanded(
           child: info.seasons.isEmpty
-              ? const Center(child: Text('No episodes available', style: TextStyle(color: AppConfig.textSecondary)))
+              ? Center(child: Text(tr('No episodes available', 'لا توجد حلقات'), style: const TextStyle(color: AppConfig.textSecondary)))
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -142,7 +173,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                         children: [
                           for (final season in info.seasons.keys)
                             ChoiceChip(
-                              label: Text('Season $season'),
+                              label: Text(tr('Season $season', 'الموسم $season')),
                               selected: season == _season,
                               onSelected: (_) => setState(() => _season = season),
                               selectedColor: fade(AppConfig.primary, 0.25),
@@ -155,10 +186,15 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     const Divider(height: 1),
                     Expanded(
                       child: ListView.separated(
+                        controller: _listScroll,
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: episodes.length,
                         separatorBuilder: (_, __) => const Divider(height: 1, indent: 24, endIndent: 24),
-                        itemBuilder: (context, i) => _EpisodeTile(episode: episodes[i], onTap: () => _play(episodes[i])),
+                        itemBuilder: (context, i) => _EpisodeTile(
+                          episode: episodes[i],
+                          highlighted: episodes[i].id == _targetEpisode,
+                          onTap: () => _play(episodes[i]),
+                        ),
                       ),
                     ),
                   ],
@@ -172,12 +208,16 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
 class _EpisodeTile extends StatelessWidget {
   final Episode episode;
   final VoidCallback onTap;
-  const _EpisodeTile({required this.episode, required this.onTap});
+  final bool highlighted;
+  const _EpisodeTile({required this.episode, required this.onTap, this.highlighted = false});
 
   @override
   Widget build(BuildContext context) {
     final e = episode;
-    return InkWell(
+    final w = WatchHistory.get(WatchHistory.episodeKey(e.id));
+    return Material(
+      color: highlighted ? fade(AppConfig.primary, 0.10) : Colors.transparent,
+      child: InkWell(
       onTap: onTap,
       hoverColor: fade(AppConfig.textPrimary, 0.05),
       child: Padding(
@@ -195,6 +235,8 @@ class _EpisodeTile extends StatelessWidget {
                 children: [
                   NetImage(url: e.image, fallbackIcon: Icons.play_circle_outline_rounded, cacheWidth: 300),
                   const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 34)),
+                  if (w != null && w.resumable)
+                    Positioned(left: 0, right: 0, bottom: 0, child: WatchProgressBar(fraction: w.fraction)),
                 ],
               ),
             ),
@@ -203,11 +245,21 @@ class _EpisodeTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Episode ${e.episodeNum}${e.title.isNotEmpty ? '  ·  ${e.title}' : ''}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${tr('Episode', 'الحلقة')} ${e.episodeNum}${e.title.isNotEmpty ? '  ·  ${e.title}' : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (w != null && w.done) ...[
+                        const SizedBox(width: 10),
+                        const WatchedBadge(),
+                      ],
+                    ],
                   ),
                   if (e.plot.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -224,6 +276,7 @@ class _EpisodeTile extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

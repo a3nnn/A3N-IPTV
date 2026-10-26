@@ -49,3 +49,9 @@ app.*.map.json
 
 # Installer output
 /installer/
+
+# Local helper scripts / keys - NEVER upload
+/signing/
+
+# thmanyah font: only the encrypted copies (*.otf.enc) may be uploaded
+/assets/fonts/*.otf

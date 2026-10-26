@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../config.dart';
+import '../data/disk_cache.dart';
+import '../l10n.dart';
 import '../utils.dart';
 
 /// "Made by A3N" — shown top-left on every screen.
@@ -31,7 +34,7 @@ class SignatureBadge extends StatelessWidget {
   }
 }
 
-class NetImage extends StatelessWidget {
+class NetImage extends StatefulWidget {
   final String url;
   final BoxFit fit;
   final IconData fallbackIcon;
@@ -45,20 +48,76 @@ class NetImage extends StatelessWidget {
     this.cacheWidth,
   });
 
+  @override
+  State<NetImage> createState() => _NetImageState();
+}
+
+/// Image saved on the TV after the first download (see DiskCache).
+class _NetImageState extends State<NetImage> {
+  File? _file;
+  bool _failed = false;
+
+  bool get _valid => widget.url.isNotEmpty && widget.url.startsWith('http');
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant NetImage old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url) _resolve();
+  }
+
+  void _resolve() {
+    _failed = false;
+    _file = null;
+    if (!_valid) return;
+    final url = widget.url;
+    final saved = DiskCache.cachedImage(url);
+    if (saved != null) {
+      _file = saved;
+      return;
+    }
+    DiskCache.image(url).then((f) {
+      if (!mounted || widget.url != url) return;
+      setState(() {
+        _file = f;
+        _failed = f == null;
+      });
+    });
+  }
+
   Widget _fallback() => Center(
-        child: Icon(fallbackIcon, color: fade(AppConfig.textSecondary, 0.6), size: 22),
+        child: Icon(widget.fallbackIcon, color: fade(AppConfig.textSecondary, 0.6), size: 22),
       );
 
   @override
   Widget build(BuildContext context) {
-    if (url.isEmpty || !url.startsWith('http')) return _fallback();
-    return Image.network(
-      url,
-      fit: fit,
-      cacheWidth: cacheWidth,
+    if (!_valid || _failed) return _fallback();
+    final file = _file;
+    if (file == null) return const SizedBox.expand();
+    return Image.file(
+      file,
+      fit: widget.fit,
+      cacheWidth: widget.cacheWidth,
       gaplessPlayback: true,
-      filterQuality: FilterQuality.medium,
-      errorBuilder: (_, __, ___) => _fallback(),
+      filterQuality: FilterQuality.low,
+      // Soft fade-in instead of popping in.
+      frameBuilder: (context, child, frame, sync) {
+        if (sync) return child;
+        return AnimatedOpacity(
+          opacity: frame == null ? 0 : 1,
+          duration: const Duration(milliseconds: 180),
+          child: child,
+        );
+      },
+      errorBuilder: (_, __, ___) {
+        DiskCache.forgetImage(widget.url);
+        return _fallback();
+      },
     );
   }
 }
@@ -112,10 +171,10 @@ class SelectableRow extends StatelessWidget {
         hoverColor: fade(AppConfig.textPrimary, 0.05),
         child: Container(
           height: height,
-          padding: const EdgeInsets.only(left: 12, right: 6),
+          padding: const EdgeInsetsDirectional.only(start: 12, end: 6),
           decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: selected ? AppConfig.primary : Colors.transparent, width: 3),
+            border: BorderDirectional(
+              start: BorderSide(color: selected ? AppConfig.primary : Colors.transparent, width: 3),
             ),
           ),
           child: Row(
@@ -164,7 +223,7 @@ class CountLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsetsDirectional.only(end: 8),
         child: Text('$count', style: const TextStyle(fontSize: 12, color: AppConfig.textSecondary)),
       );
 }
@@ -212,7 +271,7 @@ class ErrorView extends StatelessWidget {
           const SizedBox(height: 12),
           Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppConfig.textSecondary)),
           const SizedBox(height: 16),
-          FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+          FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(tr('Retry', 'إعادة المحاولة'))),
         ],
       ),
     );
@@ -277,4 +336,90 @@ class _ClockTextState extends State<ClockText> {
         fmtTime(DateTime.now()),
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppConfig.textPrimary),
       );
+}
+
+/// Thin bar at the bottom of a poster / thumbnail: how much was watched.
+class WatchProgressBar extends StatelessWidget {
+  final double fraction;
+  const WatchProgressBar({super.key, required this.fraction});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 5,
+        color: fade(Colors.black, 0.55),
+        alignment: AlignmentDirectional.centerStart,
+        child: FractionallySizedBox(
+          widthFactor: fraction.clamp(0.03, 1.0),
+          heightFactor: 1,
+          child: const ColoredBox(color: AppConfig.primary),
+        ),
+      );
+}
+
+/// "✓ Watched" mark.
+class WatchedBadge extends StatelessWidget {
+  final bool compact;
+  const WatchedBadge({super.key, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 5 : 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: fade(Colors.black, 0.72),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: fade(AppConfig.primary, 0.7)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_rounded, size: 14, color: AppConfig.primary),
+            if (!compact) ...[
+              const SizedBox(width: 3),
+              Text(tr('Watched', 'تمت المشاهدة'),
+                  style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
+      );
+}
+
+/// Clear white frame around whatever inside has the remote's focus
+/// (for list tiles, chips and buttons whose own highlight is too faint).
+class FocusRing extends StatefulWidget {
+  final Widget child;
+  final double radius;
+  const FocusRing({super.key, required this.child, this.radius = 10});
+
+  @override
+  State<FocusRing> createState() => _FocusRingState();
+}
+
+class _FocusRingState extends State<FocusRing> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) => Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (f) {
+          if (f != _focused) setState(() => _focused = f);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            color: _focused ? fade(AppConfig.primary, 0.20) : Colors.transparent,
+            borderRadius: BorderRadius.circular(widget.radius),
+            border: Border.all(color: _focused ? AppConfig.textPrimary : Colors.transparent, width: 2.5),
+          ),
+          child: widget.child,
+        ),
+      );
+}
+
+/// Small confirmation at the bottom of the window.
+void showToast(BuildContext context, String text) {
+  final m = ScaffoldMessenger.maybeOf(context);
+  if (m == null) return;
+  m.hideCurrentSnackBar();
+  m.showSnackBar(SnackBar(content: Text(text), duration: const Duration(milliseconds: 1600)));
 }

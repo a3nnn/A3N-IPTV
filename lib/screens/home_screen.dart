@@ -14,15 +14,29 @@ import 'blocked_screen.dart';
 import 'catalog_sections.dart';
 import 'live_section.dart';
 import 'settings_section.dart';
+import 'start_menu.dart';
+import '../data/update_service.dart';
+import '../l10n.dart';
+import '../widgets/update_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
+  /// Set when the language changes, so the app reopens on Settings.
+  static bool openSettingsNext = false;
+
+  /// -1 = the start menu.
+  static int takeStartIndex() {
+    final i = openSettingsNext ? 3 : -1;
+    openSettingsNext = false;
+    return i;
+  }
+
   const HomeScreen({super.key});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _index = 0;
+  int _index = HomeScreen.takeStartIndex();
   // One key per section so the live section keeps its state when it
   // switches between normal and full-window layouts.
   final List<GlobalKey> _keys = List.generate(4, (_) => GlobalKey());
@@ -33,6 +47,17 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     // Re-check every 10 minutes so a block takes effect while the app is open.
     _licenseTimer = Timer.periodic(const Duration(minutes: 10), (_) => _checkLicense());
+    // Look for a newer version a few seconds after opening (optional update).
+    Future.delayed(const Duration(seconds: 3), _checkUpdate);
+  }
+
+  Future<void> _checkUpdate() async {
+    if (UpdateService.askedThisSession) return;
+    UpdateService.askedThisSession = true;
+    final info = await UpdateService.check();
+    if (info == null || !mounted) return;
+    if (PlayerService.instance.fullscreen.value) return; // don't interrupt full-screen TV
+    await showUpdateDialog(context, info);
   }
 
   @override
@@ -63,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _go(int i) {
     if (i == _index) return;
     if (_index == 0) PlayerService.instance.stop();
+    if (i >= 0) Storage.setLastSection(i);
     setState(() => _index = i);
   }
 
@@ -84,6 +110,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return ValueListenableBuilder<bool>(
       valueListenable: PlayerService.instance.fullscreen,
       builder: (context, fullscreen, _) {
+        if (_index < 0) {
+          return Scaffold(
+            body: Column(
+              children: [
+                const TopBar(),
+                Expanded(child: StartMenu(onSelect: _go)),
+              ],
+            ),
+          );
+        }
         final section = KeyedSubtree(key: _keys[_index], child: _section());
         if (fullscreen) {
           return Scaffold(backgroundColor: Colors.black, body: section);
@@ -138,7 +174,7 @@ class TopBar extends StatelessWidget {
           if (exp != null) ...[
             const Icon(Icons.event_available_rounded, size: 16, color: AppConfig.textSecondary),
             const SizedBox(width: 6),
-            Text('Expires ${fmtDate(exp)}', style: const TextStyle(fontSize: 13, color: AppConfig.textSecondary)),
+            Text(tr('Expires ${fmtDate(exp)}', 'ينتهي ${fmtDate(exp)}'), style: const TextStyle(fontSize: 13, color: AppConfig.textSecondary)),
             const SizedBox(width: 22),
           ],
           const ClockText(),
@@ -153,12 +189,14 @@ class NavRail extends StatelessWidget {
   final ValueChanged<int> onSelect;
   const NavRail({super.key, required this.index, required this.onSelect});
 
-  static const List<(IconData, String)> _items = [
-    (Icons.live_tv_rounded, 'Live TV'),
-    (Icons.movie_rounded, 'Movies'),
-    (Icons.video_library_rounded, 'Series'),
-    (Icons.settings_rounded, 'Settings'),
-  ];
+  // index -1 = back to the start menu.
+  static List<(int, IconData, String)> get _items => [
+        (-1, Icons.home_rounded, tr('Home', 'الرئيسية')),
+        (0, Icons.live_tv_rounded, tr('Live TV', 'البث المباشر')),
+        (1, Icons.movie_rounded, tr('Movies', 'الأفلام')),
+        (2, Icons.video_library_rounded, tr('Series', 'المسلسلات')),
+        (3, Icons.settings_rounded, tr('Settings', 'الإعدادات')),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -168,12 +206,12 @@ class NavRail extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          for (var i = 0; i < _items.length; i++)
+          for (final it in _items)
             _NavItem(
-              icon: _items[i].$1,
-              label: _items[i].$2,
-              selected: i == index,
-              onTap: () => onSelect(i),
+              icon: it.$2,
+              label: it.$3,
+              selected: it.$1 == index,
+              onTap: () => onSelect(it.$1),
             ),
         ],
       ),

@@ -25,13 +25,29 @@ class PlayerService {
   /// True while live TV is shown full window (hides the top bar and menu).
   final ValueNotifier<bool> fullscreen = ValueNotifier<bool>(false);
 
+  /// Bumped every time a new stream is opened (shows the quality badge).
+  final ValueNotifier<int> opened = ValueNotifier<int>(0);
+  DateTime openedAt = DateTime(2000);
+
   String? _currentUrl;
   double _volumeBeforeMute = 100;
 
   Future<void> play(String url) async {
     if (_currentUrl == url) return;
     _currentUrl = url;
+    openedAt = DateTime.now();
+    opened.value++;
     await player.open(Media(url, httpHeaders: const {'User-Agent': AppConfig.userAgent}));
+  }
+
+  /// Reads an mpv property, '' if it isn't available.
+  Future<String> property(String name) async {
+    try {
+      final v = await (player.platform as dynamic).getProperty(name);
+      return v?.toString() ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<void> stop() async {

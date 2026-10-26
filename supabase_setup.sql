@@ -1,6 +1,7 @@
 -- ============================================================
 --  A3N IPTV Player - usage tracking & remote block
---  Paste ALL of this in Supabase > SQL Editor > New query > Run
+--  Paste ALL of this in Supabase > SQL Editor > Run
+--  Safe to run again any time: it only adds what is missing.
 -- ============================================================
 
 -- One row per device that opened the app.
@@ -21,6 +22,18 @@ create table if not exists public.devices (
   block_user   boolean not null default false,  -- tick = block this USERNAME on every device
   message      text                             -- optional message shown to the blocked user
 );
+
+-- Windows / Android TV, worked out from the "os" the app sends.
+-- (Added separately so it also gets added to an existing table.)
+alter table public.devices
+  add column if not exists platform text
+  generated always as (
+    case
+      when os ilike 'android%' then 'Android TV'
+      when os ilike 'windows%' then 'Windows'
+      else 'Other'
+    end
+  ) stored;
 
 -- Nobody can read or edit the table through the public API.
 -- Only you (from the Supabase dashboard) can see it.
@@ -111,8 +124,9 @@ revoke all on function public.checkin(text, text, text, text, text, boolean, tex
 grant execute on function public.checkin(text, text, text, text, text, boolean, text, text, text) to anon;
 
 -- Handy view for you: newest first, with an "online now" column.
-create or replace view public.devices_overview as
-  select username, device_name,
+drop view if exists public.devices_overview;
+create view public.devices_overview as
+  select username, platform, device_name,
          (last_seen > now() - interval '20 minutes') as online_now,
          ip, country, city, isp,
          last_seen, first_seen, open_count, app_version,

@@ -3,24 +3,48 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../data/storage.dart';
 import '../data/xtream_api.dart';
+import '../l10n.dart';
 import '../player/player_service.dart';
 import '../utils.dart';
 import '../widgets/brand.dart';
+import '../widgets/sub_style.dart';
+import '../widgets/update_dialog.dart';
+import 'home_screen.dart';
 import 'login_screen.dart';
 
-class SettingsSection extends StatelessWidget {
+class SettingsSection extends StatefulWidget {
   const SettingsSection({super.key});
+
+  @override
+  State<SettingsSection> createState() => _SettingsSectionState();
+}
+
+class _SettingsSectionState extends State<SettingsSection> {
+  String _subLang = Storage.subtitleLang;
+
+  void _setSubLang(String v) {
+    setState(() => _subLang = v);
+    Storage.setSubtitleLang(v);
+  }
+
+  Future<void> _setLanguage(bool arabic) async {
+    if (arabic == L.isAr) return;
+    await PlayerService.instance.stop();
+    HomeScreen.openSettingsNext = true; // come back to this page
+    await L.setArabic(arabic); // the whole app redraws in the new language
+  }
 
   Future<void> _logout(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppConfig.surface,
-        title: const Text('Sign out?'),
-        content: const Text('You will need to enter your username and password again.'),
+        title: Text(tr('Sign out?', 'تسجيل الخروج؟')),
+        content: Text(tr('You will need to enter your username and password again.',
+            'بتحتاج تكتب اسم المستخدم وكلمة المرور مرة ثانية.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sign out')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Cancel', 'إلغاء'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Sign out', 'تسجيل الخروج'))),
         ],
       ),
     );
@@ -44,49 +68,98 @@ class SettingsSection extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(32),
       children: [
-        const Text('Settings', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+        Text(tr('Settings', 'الإعدادات'), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
         const SizedBox(height: 24),
         _Card(
-          title: 'Account',
+          title: tr('Language', 'اللغة'),
           children: [
-            _InfoRow('Username', user),
-            _InfoRow('Status', acc?.status.isNotEmpty == true ? acc!.status : '-'),
-            _InfoRow('Expires', acc?.expDate != null ? fmtDate(acc!.expDate!) : 'Unlimited'),
+            _Option(label: 'العربية', selected: L.isAr, onTap: () => _setLanguage(true)),
+            _Option(label: 'English', selected: !L.isAr, onTap: () => _setLanguage(false)),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _Card(
+          title: tr('Account', 'الحساب'),
+          children: [
+            _InfoRow(tr('Username', 'اسم المستخدم'), user),
+            _InfoRow(tr('Status', 'الحالة'), acc?.status.isNotEmpty == true ? acc!.status : '-'),
+            _InfoRow(tr('Expires', 'ينتهي'),
+                acc?.expDate != null ? fmtDate(acc!.expDate!) : tr('Unlimited', 'غير محدود')),
             if (acc != null && acc.maxConnections > 0)
-              _InfoRow('Connections', '${acc.activeConnections} / ${acc.maxConnections}'),
-            _InfoRow('Device ID', Storage.deviceId),
+              _InfoRow(tr('Connections', 'الاتصالات'), '${acc.activeConnections} / ${acc.maxConnections}'),
+            _InfoRow(tr('Device ID', 'رقم الجهاز'), Storage.deviceId),
             const SizedBox(height: 16),
             Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: OutlinedButton.icon(
                 onPressed: () => _logout(context),
                 icon: const Icon(Icons.logout_rounded, color: AppConfig.danger),
-                label: const Text('Sign out', style: TextStyle(color: AppConfig.danger)),
+                label: Text(tr('Sign out', 'تسجيل الخروج'), style: const TextStyle(color: AppConfig.danger)),
                 style: OutlinedButton.styleFrom(side: const BorderSide(color: AppConfig.danger)),
               ),
             ),
           ],
         ),
         const SizedBox(height: 20),
-        const _Card(
-          title: 'Keyboard shortcuts (Live TV)',
+        _Card(
+          title: tr('Subtitles for movies & series', 'ترجمة الأفلام والمسلسلات'),
           children: [
-            _InfoRow('Open full screen', 'Click the playing channel again, or double-click the video'),
-            _InfoRow('Change channel', 'Arrow Up / Arrow Down'),
-            _InfoRow('Show info', 'Enter or Space'),
-            _InfoRow('Exit full screen', 'Esc'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                tr('Chosen automatically when a movie or episode starts (if the file has it).',
+                    'تنختار تلقائياً أول ما يبدأ الفلم أو الحلقة (إذا كانت موجودة في الملف).'),
+                style: const TextStyle(fontSize: 12, color: AppConfig.textSecondary),
+              ),
+            ),
+            for (final o in [
+              ('off', tr('No subtitles', 'بدون ترجمة')),
+              ('ar', tr('Arabic', 'العربية')),
+              ('en', tr('English', 'الإنجليزية')),
+              ('ar_en', tr('Arabic, otherwise English', 'العربية، وإذا ما فيه فالإنجليزية')),
+            ])
+              _Option(label: o.$2, selected: _subLang == o.$1, onTap: () => _setSubLang(o.$1)),
+            const Divider(height: 28),
+            Text(tr('Subtitle style', 'شكل الترجمة'), style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const SubStylePicker(),
           ],
         ),
         const SizedBox(height: 20),
         _Card(
-          title: 'About',
+          title: tr('Keyboard shortcuts', 'اختصارات الكيبورد'),
+          children: [
+            _InfoRow(tr('Live TV: full screen', 'البث: ملء الشاشة'),
+                tr('Click the playing channel again, double-click the video, or F',
+                    'اضغط على القناة الشغالة مرة ثانية، أو دبل كليك على الفيديو، أو F')),
+            _InfoRow(tr('Live TV: change channel', 'البث: تغيير القناة'),
+                tr('Arrow Up / Down, Page Up / Down', 'السهم فوق / تحت، Page Up / Down')),
+            _InfoRow(tr('Volume', 'الصوت'), tr('Arrow Left / Right, mouse wheel, M = mute', 'السهم يمين / يسار، عجلة الماوس، M = كتم')),
+            _InfoRow(tr('Movies & series', 'الأفلام والمسلسلات'),
+                tr('Space = play / pause, Arrow Left / Right = seek, F = full screen, S = audio & subtitles',
+                    'Space = تشغيل / إيقاف، السهم يمين / يسار = تقديم وترجيع، F = ملء الشاشة، S = الصوت والترجمة')),
+            _InfoRow(tr('Back / exit full screen', 'رجوع / الخروج من ملء الشاشة'), 'Esc'),
+          ],
+        ),
+        const SizedBox(height: 20),
+        _Card(
+          title: tr('About', 'عن التطبيق'),
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Align(alignment: Alignment.centerLeft, child: BrandMark(size: 34)),
+              child: Align(alignment: AlignmentDirectional.centerStart, child: BrandMark(size: 34)),
             ),
-            const _InfoRow('Version', AppConfig.version),
+            _InfoRow(tr('Version', 'الإصدار'), AppConfig.version),
             const _InfoRow('', AppConfig.signature),
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FilledButton.icon(
+                onPressed: () => checkForUpdatesManually(context),
+                icon: const Icon(Icons.system_update_rounded),
+                label: Text(tr('Check for updates', 'البحث عن تحديث')),
+              ),
+            ),
           ],
         ),
       ],
@@ -102,7 +175,7 @@ class _Card extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 720),
+      constraints: const BoxConstraints(maxWidth: 760),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: AppConfig.surface,
@@ -113,12 +186,32 @@ class _Card extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title.toUpperCase(),
-              style: const TextStyle(
-                  fontSize: 12, letterSpacing: 1.3, color: AppConfig.textSecondary, fontWeight: FontWeight.w700)),
+              style: TextStyle(
+                  fontSize: 12, letterSpacing: L.spacing(1.3), color: AppConfig.textSecondary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           ...children,
         ],
       ),
+    );
+  }
+}
+
+class _Option extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _Option({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      selected: selected,
+      selectedColor: AppConfig.primary,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      leading: Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 22),
+      title: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      onTap: onTap,
     );
   }
 }
@@ -135,7 +228,7 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 170, child: Text(label, style: const TextStyle(color: AppConfig.textSecondary))),
+          SizedBox(width: 190, child: Text(label, style: const TextStyle(color: AppConfig.textSecondary))),
           Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500))),
         ],
       ),

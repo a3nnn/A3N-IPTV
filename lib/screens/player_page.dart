@@ -15,6 +15,13 @@ import '../widgets/common.dart';
 import '../widgets/stream_info.dart';
 import '../widgets/sub_style.dart';
 
+/// The episode after the one playing ("Next episode" button).
+class NextEpisode {
+  final String label;
+  final void Function(BuildContext context) open;
+  const NextEpisode({required this.label, required this.open});
+}
+
 /// Full-window player for movies and series episodes (with seek bar).
 /// Keys: Space play/pause, ◀ ▶ seek, F full screen, S audio & subtitles, Esc back.
 class PlayerPage extends StatefulWidget {
@@ -26,7 +33,17 @@ class PlayerPage extends StatefulWidget {
 
   /// Jump here once the video is ready ("continue watching").
   final Duration startAt;
-  const PlayerPage({super.key, required this.url, required this.title, this.watch, this.startAt = Duration.zero});
+
+  /// Series only: the following episode.
+  final NextEpisode? next;
+  const PlayerPage({
+    super.key,
+    required this.url,
+    required this.title,
+    this.watch,
+    this.startAt = Duration.zero,
+    this.next,
+  });
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -116,15 +133,30 @@ class _PlayerPageState extends State<PlayerPage> {
     WatchHistory.report(w, st.position.inSeconds, dur);
   }
 
-  @override
-  void dispose() {
+  /// Set when leaving for the next episode (its position is already saved).
+  bool _left = false;
+
+  void _goNext() {
+    final n = widget.next;
+    if (n == null || _left) return;
     _savePosition();
     WatchHistory.saveNow();
+    _left = true;
+    n.open(context);
+  }
+
+  @override
+  void dispose() {
+    if (!_left) {
+      _savePosition();
+      WatchHistory.saveNow();
+    }
     _hideTimer?.cancel();
     _saveTimer?.cancel();
     _durSub?.cancel();
     _tracksSub?.cancel();
-    _svc.stop();
+    // Don't stop the next episode that is already starting.
+    if (_svc.currentUrl == widget.url) _svc.stop();
     super.dispose();
   }
 
@@ -134,6 +166,36 @@ class _PlayerPageState extends State<PlayerPage> {
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) setState(() => _showHeader = false);
     });
+  }
+
+  /// Bottom bar: play, volume, audio & subtitles, time … full screen, next episode.
+  MaterialDesktopVideoControlsThemeData _controlsTheme() {
+    final next = widget.next;
+    return MaterialDesktopVideoControlsThemeData(
+      seekBarThumbColor: AppConfig.primary,
+      seekBarPositionColor: AppConfig.primary,
+      bottomButtonBar: [
+        const MaterialDesktopPlayOrPauseButton(),
+        const MaterialDesktopVolumeButton(),
+        MaterialDesktopCustomButton(
+          icon: const Icon(Icons.subtitles_rounded),
+          onPressed: _openTracks,
+        ),
+        const MaterialDesktopPositionIndicator(),
+        const Spacer(),
+        const MaterialDesktopFullscreenButton(),
+        if (next != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: TextButton.icon(
+              onPressed: _goNext,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
+              icon: const Icon(Icons.skip_next_rounded),
+              label: Text('${tr('Next episode', 'الحلقة التالية')}  ${next.label}'),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _openTracks() async {
@@ -159,6 +221,10 @@ class _PlayerPageState extends State<PlayerPage> {
             _openTracks();
             return KeyEventResult.handled;
           }
+          if (k == LogicalKeyboardKey.keyN && widget.next != null) {
+            _goNext();
+            return KeyEventResult.handled;
+          }
           return KeyEventResult.ignored;
         },
         child: MouseRegion(
@@ -172,12 +238,16 @@ class _PlayerPageState extends State<PlayerPage> {
                 builder: (context, _, __) => Directionality(
                   // Seek bar and buttons always left → right.
                   textDirection: TextDirection.ltr,
-                  child: Video(
-                    controller: _svc.controller,
-                    fill: Colors.black,
-                    subtitleViewConfiguration: SubtitleViewConfiguration(
-                      style: SubStyle.textStyle(),
-                      padding: const EdgeInsets.fromLTRB(60, 0, 60, 90),
+                  child: MaterialDesktopVideoControlsTheme(
+                    normal: _controlsTheme(),
+                    fullscreen: _controlsTheme(),
+                    child: Video(
+                      controller: _svc.controller,
+                      fill: Colors.black,
+                      subtitleViewConfiguration: SubtitleViewConfiguration(
+                        style: SubStyle.textStyle(),
+                        padding: const EdgeInsets.fromLTRB(60, 0, 60, 90),
+                      ),
                     ),
                   ),
                 ),

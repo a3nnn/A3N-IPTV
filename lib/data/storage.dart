@@ -72,6 +72,21 @@ class Storage {
   static String? get language => _p.getString('language');
   static Future<void> setLanguage(String code) => _p.setString('language', code);
 
+  // ---------- Movie / series favorites ----------
+  static Set<int> _ids(String key) =>
+      (_p.getStringList(key) ?? const []).map(int.tryParse).whereType<int>().toSet();
+
+  static Set<int> get favMovies => _ids('fav_movies');
+  static Set<int> get favSeries => _ids('fav_series');
+
+  static Future<bool> toggleFav(String key, int id) async {
+    final ids = _ids(key);
+    final added = !ids.remove(id);
+    if (added) ids.add(id);
+    await _p.setStringList(key, ids.map((e) => '$e').toList());
+    return added;
+  }
+
   static double get volume => _p.getDouble('volume') ?? 100;
   static Future<void> setVolume(double v) => _p.setDouble('volume', v);
 

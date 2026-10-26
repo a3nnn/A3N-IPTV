@@ -30,6 +30,7 @@ class PlayerService {
   DateTime openedAt = DateTime(2000);
 
   String? _currentUrl;
+  String? get currentUrl => _currentUrl;
   double _volumeBeforeMute = 100;
 
   Future<void> play(String url) async {

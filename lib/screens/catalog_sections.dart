@@ -13,6 +13,7 @@ import 'playback.dart';
 import 'series_detail_screen.dart';
 
 const String _allId = '__all';
+const String _favId = '__fav';
 
 class CatalogItem {
   final int id;
@@ -70,6 +71,7 @@ class MoviesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CatalogSection(
         section: 'movies',
+        favKey: 'fav_movies',
         load: _load,
         allLabel: tr('All Movies', 'كل الأفلام'),
         searchHint: tr('Search movies', 'ابحث في الأفلام'),
@@ -107,6 +109,7 @@ class SeriesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CatalogSection(
         section: 'series',
+        favKey: 'fav_series',
         load: _load,
         allLabel: tr('All Series', 'كل المسلسلات'),
         searchHint: tr('Search series', 'ابحث في المسلسلات'),
@@ -120,9 +123,16 @@ class CatalogSection extends StatefulWidget {
   final String allLabel;
   final String searchHint;
   final String section;
+  final String favKey;
 
-  const CatalogSection(
-      {super.key, required this.section, required this.load, required this.allLabel, required this.searchHint});
+  const CatalogSection({
+    super.key,
+    required this.section,
+    required this.favKey,
+    required this.load,
+    required this.allLabel,
+    required this.searchHint,
+  });
 
   @override
   State<CatalogSection> createState() => _CatalogSectionState();
@@ -173,6 +183,7 @@ class _CatalogSectionState extends State<CatalogSection> {
         _data = data;
         _counts = counts;
         _loading = false;
+        _refreshFavs();
         _restoreLastPlace();
       });
       if (_lastItemId != null) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToLast());
@@ -187,7 +198,9 @@ class _CatalogSectionState extends State<CatalogSection> {
 
   void _restoreLastPlace() {
     final cat = Storage.lastCatalogCategory(widget.section);
-    if (cat != null && (cat == _allId || _data.categories.any((c) => c.id == cat))) _categoryId = cat;
+    if (cat != null && (cat == _allId || cat == _favId || _data.categories.any((c) => c.id == cat))) {
+      _categoryId = cat;
+    }
     _applyFilter();
     final last = Storage.lastCatalogItem(widget.section);
     _lastItemId = (last != null && _visible.any((i) => i.id == last)) ? last : null;
@@ -211,16 +224,52 @@ class _CatalogSectionState extends State<CatalogSection> {
     pos.jumpTo(((index ~/ cols) * rowH - rowH * 0.6).clamp(0.0, pos.maxScrollExtent));
   }
 
+  // ------------------------------------------------ favorites (right-click)
+
+  Set<int> _favs = {};
+  int _favCount = 0;
+
+  void _refreshFavs() {
+    _favs = widget.favKey == 'fav_movies' ? Storage.favMovies : Storage.favSeries;
+    _favCount = _data.items.where((i) => _favs.contains(i.id)).length;
+  }
+
+  Future<void> _toggleFav(CatalogItem item) async {
+    final added = await Storage.toggleFav(widget.favKey, item.id);
+    if (!mounted) return;
+    showToast(
+        context,
+        added
+            ? tr('★  ${item.title} added to favorites', '★  تمت إضافة ${item.title} للمفضلة')
+            : tr('${item.title} removed from favorites', 'تمت إزالة ${item.title} من المفضلة'));
+    setState(() {
+      _refreshFavs();
+      if (_categoryId == _favId) _applyFilter();
+    });
+  }
+
   Future<void> _open(CatalogItem item) async {
     Storage.setLastCatalogItem(widget.section, item.id);
     setState(() => _lastItemId = item.id);
     await item.onOpen(context);
-    if (mounted) setState(() {}); // refresh the watch marks
+    if (mounted) {
+      setState(() {
+        _refreshFavs(); // may have changed on the series page
+        if (_categoryId == _favId) _applyFilter();
+      });
+    }
   }
 
   void _applyFilter() {
-    Iterable<CatalogItem> list =
-        _categoryId == _allId ? _data.items : _data.items.where((i) => i.categoryId == _categoryId);
+    Iterable<CatalogItem> list;
+    if (_categoryId == _allId) {
+      list = _data.items;
+    } else if (_categoryId == _favId) {
+      final favs = _favs;
+      list = _data.items.where((i) => favs.contains(i.id));
+    } else {
+      list = _data.items.where((i) => i.categoryId == _categoryId);
+    }
     final q = searchNorm(_query.trim());
     if (q.isNotEmpty) list = list.where((i) => searchNorm(i.title).contains(q));
     _visible = list.toList();
@@ -249,6 +298,13 @@ class _CatalogSectionState extends State<CatalogSection> {
             selectedId: _categoryId,
             onSelect: _selectCategory,
             entries: [
+              CategoryEntry(
+                  id: _favId,
+                  name: tr('Favorites', 'المفضلة'),
+                  count: _favCount,
+                  fixed: true,
+                  icon: Icons.star_rounded,
+                  iconColor: AppConfig.accent),
               CategoryEntry(id: _allId, name: widget.allLabel, count: _data.items.length, fixed: true),
               ..._data.categories.map((c) => CategoryEntry(id: c.id, name: c.name, count: _counts[c.id] ?? 0)),
             ],
@@ -275,7 +331,12 @@ class _CatalogSectionState extends State<CatalogSection> {
               Expanded(
                 child: _visible.isEmpty
                     ? Center(
-                        child: Text(tr('Nothing here', 'لا يوجد محتوى'),
+                        child: Text(
+                            _categoryId == _favId
+                                ? tr('No favorites yet.\nRight-click a poster to add it.',
+                                    'ما فيه مفضلة للحين.\nكليك يمين على البوستر عشان تضيفه.')
+                                : tr('Nothing here', 'لا يوجد محتوى'),
+                            textAlign: TextAlign.center,
                             style: const TextStyle(color: AppConfig.textSecondary)))
                     : LayoutBuilder(builder: (context, box) {
                         _gridWidth = box.maxWidth;
@@ -295,7 +356,9 @@ class _CatalogSectionState extends State<CatalogSection> {
                             itemBuilder: (context, i) => PosterCard(
                               item: _visible[i],
                               highlighted: _visible[i].id == _lastItemId,
+                              favorite: _favs.contains(_visible[i].id),
                               onOpen: () => _open(_visible[i]),
+                              onToggleFavorite: () => _toggleFav(_visible[i]),
                             ),
                           ),
                         );
@@ -312,10 +375,19 @@ class _CatalogSectionState extends State<CatalogSection> {
 class PosterCard extends StatefulWidget {
   final CatalogItem item;
   final VoidCallback onOpen;
+  final VoidCallback onToggleFavorite;
+  final bool favorite;
 
   /// The last poster opened in this section.
   final bool highlighted;
-  const PosterCard({super.key, required this.item, required this.onOpen, this.highlighted = false});
+  const PosterCard({
+    super.key,
+    required this.item,
+    required this.onOpen,
+    required this.onToggleFavorite,
+    this.favorite = false,
+    this.highlighted = false,
+  });
 
   @override
   State<PosterCard> createState() => _PosterCardState();
@@ -336,6 +408,8 @@ class _PosterCardState extends State<PosterCard> {
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         onTap: widget.onOpen,
+        // Right-click = add to / remove from favorites.
+        onSecondaryTap: widget.onToggleFavorite,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -358,6 +432,12 @@ class _PosterCardState extends State<PosterCard> {
                       children: [
                         NetImage(url: item.image, fallbackIcon: Icons.movie_outlined, cacheWidth: 360),
                         ..._watchMarks(item),
+                        if (widget.favorite)
+                          const Positioned(
+                            top: 6,
+                            left: 6,
+                            child: Icon(Icons.star_rounded, size: 22, color: AppConfig.accent),
+                          ),
                         if (item.rating > 0)
                           Positioned(
                             top: 6,

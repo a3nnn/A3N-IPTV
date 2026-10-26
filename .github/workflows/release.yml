@@ -26,6 +26,20 @@ jobs:
           [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || V="0.0.0"
           echo "APP_VERSION=$V" >> "$GITHUB_ENV"
 
+      - name: Decrypt font
+        shell: bash
+        env:
+          FONT_KEY: ${{ secrets.FONT_KEY }}
+        run: |
+          if [ -z "$FONT_KEY" ]; then
+            echo "::error::Add the FONT_KEY secret first."
+            exit 1
+          fi
+          for f in assets/fonts/*.otf.enc; do
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$f" -out "${f%.enc}" -pass env:FONT_KEY
+          done
+          ls -la assets/fonts
+
       - name: Build app
         shell: pwsh
         run: |

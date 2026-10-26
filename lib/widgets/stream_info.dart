@@ -73,32 +73,33 @@ class _StreamInfoBadgeState extends State<StreamInfoBadge> {
     // Already playing when this appears (e.g. going full screen): use it.
     // Right after opening a stream, wait a moment so the old size isn't shown.
     final since = DateTime.now().difference(_svc.openedAt).inMilliseconds;
-    final wait = (2500 - since).clamp(0, 2500);
+    final wait = (1200 - since).clamp(0, 1200);
     _poll = Timer(Duration(milliseconds: wait), () => use(p.state.videoParams));
   }
 
+  /// Shows the quality at once; the frame rate is added a moment later.
   Future<void> _show(int run, int w, int h) async {
-    final p = _svc.player;
-    // Frame rate: asked once, only after the video is really playing.
-    var fps = 0.0;
-    for (var i = 0; i < 10 && (p.state.buffering || !p.state.playing); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      if (!mounted || run != _run) return;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted || run != _run) return;
-    if (p.state.playing && !p.state.buffering) {
-      fps = double.tryParse(await _svc.property('container-fps')) ?? 0;
-    }
     if (!mounted || run != _run) return;
     setState(() {
-      _text = _label(w, h, fps);
+      _text = _label(w, h, 0);
       _visible = true;
     });
-    if (widget.show != null) return; // follows the info bar
-    _hide = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _visible = false);
-    });
+    if (widget.show == null) {
+      _hide = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _visible = false);
+      });
+    }
+    for (var i = 0; i < 8; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted || run != _run) return;
+      var fps = double.tryParse(await _svc.property('container-fps')) ?? 0;
+      if (fps <= 0) fps = double.tryParse(await _svc.property('estimated-vf-fps')) ?? 0;
+      if (!mounted || run != _run) return;
+      if (fps > 0) {
+        setState(() => _text = _label(w, h, fps));
+        return;
+      }
+    }
   }
 
   static String _label(int w, int h, double fps) {

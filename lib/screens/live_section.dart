@@ -243,7 +243,7 @@ class _LiveSectionState extends State<LiveSection> {
   void _showOverlay() {
     _overlayTimer?.cancel();
     if (!_overlay && mounted) setState(() => _overlay = true);
-    _overlayTimer = Timer(const Duration(seconds: 4), () {
+    _overlayTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) setState(() => _overlay = false);
     });
   }
@@ -472,8 +472,12 @@ class _LiveSectionState extends State<LiveSection> {
   }
 
   Widget _previewPlayer() {
+    // Quality badge, volume and full-screen button show and hide together:
+    // when a channel starts and while the mouse moves over the video.
     return Listener(
       onPointerSignal: _onWheel,
+      child: MouseRegion(
+      onHover: (_) => _showOverlay(),
       child: GestureDetector(
       onDoubleTap: () => _setFullscreen(true),
       child: Stack(
@@ -481,10 +485,15 @@ class _LiveSectionState extends State<LiveSection> {
         children: [
           _video(),
           _bufferingIndicator(),
-          const Positioned(top: 10, left: 10, child: StreamInfoBadge(compact: true)),
+          Positioned(top: 10, left: 10, child: StreamInfoBadge(compact: true, show: _overlay)),
           Positioned(
             right: 12,
             bottom: 12,
+            child: AnimatedOpacity(
+            opacity: _overlay ? 1 : 0,
+            duration: const Duration(milliseconds: 250),
+            child: IgnorePointer(
+            ignoring: !_overlay,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -497,9 +506,12 @@ class _LiveSectionState extends State<LiveSection> {
                 ),
               ],
             ),
+            ),
+            ),
           ),
         ],
       ),
+    ),
     ),
     );
   }

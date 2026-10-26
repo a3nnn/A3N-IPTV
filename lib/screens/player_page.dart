@@ -172,6 +172,8 @@ class _PlayerPageState extends State<PlayerPage> {
   MaterialDesktopVideoControlsThemeData _controlsTheme() {
     final next = widget.next;
     return MaterialDesktopVideoControlsThemeData(
+      // Click anywhere on the picture = pause / play.
+      playAndPauseOnTap: true,
       seekBarThumbColor: AppConfig.primary,
       seekBarPositionColor: AppConfig.primary,
       bottomButtonBar: [
@@ -296,12 +298,6 @@ class _PlayerPageState extends State<PlayerPage> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
                             ),
-                          ),
-                          const SizedBox(width: 14),
-                          RoundIconButton(
-                            icon: Icons.subtitles_rounded,
-                            tooltip: tr('Audio & subtitles (S)', 'الصوت والترجمة (S)'),
-                            onTap: _openTracks,
                           ),
                         ],
                       ),

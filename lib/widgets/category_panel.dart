@@ -50,6 +50,16 @@ class _CategoryPanelState extends State<CategoryPanel> {
   late List<String> _pinned = List.of(Storage.pinned(widget.section));
   String? _hoverId;
 
+  /// Filters the category names (Favorites / All always stay).
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   void _togglePin(String id) {
     setState(() {
       if (!_pinned.remove(id)) _pinned.add(id);
@@ -59,10 +69,13 @@ class _CategoryPanelState extends State<CategoryPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final q = searchNorm(_query.trim());
+    bool match(CategoryEntry e) => q.isEmpty || searchNorm(e.name).contains(q);
+
     final fixed = widget.entries.where((e) => e.fixed).toList();
     final byId = {for (final e in widget.entries.where((e) => !e.fixed)) e.id: e};
-    final pinned = [for (final id in _pinned) if (byId.containsKey(id)) byId[id]!];
-    final rest = widget.entries.where((e) => !e.fixed && !_pinned.contains(e.id)).toList();
+    final pinned = [for (final id in _pinned) if (byId.containsKey(id) && match(byId[id]!)) byId[id]!];
+    final rest = widget.entries.where((e) => !e.fixed && !_pinned.contains(e.id) && match(e)).toList();
 
     final rows = <Widget>[
       for (final e in fixed) _row(e, pinned: false),
@@ -70,12 +83,26 @@ class _CategoryPanelState extends State<CategoryPanel> {
       for (final e in pinned) _row(e, pinned: true),
       if (pinned.isNotEmpty && rest.isNotEmpty) const Divider(height: 9, indent: 12, endIndent: 12),
       for (final e in rest) _row(e, pinned: false),
+      if (q.isNotEmpty && pinned.isEmpty && rest.isEmpty)
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(tr('No categories found', 'ما فيه أقسام بهالاسم'),
+              style: const TextStyle(color: AppConfig.textSecondary)),
+        ),
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label(tr('CATEGORIES', 'الأقسام'), top: 16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: SearchField(
+            hint: tr('Search categories', 'ابحث في الأقسام'),
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+          ),
+        ),
         Expanded(child: ListView(children: rows)),
       ],
     );

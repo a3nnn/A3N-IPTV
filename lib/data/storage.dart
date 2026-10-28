@@ -90,6 +90,14 @@ class Storage {
   static double get volume => _p.getDouble('volume') ?? 100;
   static Future<void> setVolume(double v) => _p.setDouble('volume', v);
 
+  /// Live TV column widths (dragged by the user), null = default.
+  static double? get liveCatWidth => _p.getDouble('live_cat_width');
+  static double? get liveChanWidth => _p.getDouble('live_chan_width');
+  static Future<void> setLiveWidths(double cat, double chan) async {
+    await _p.setDouble('live_cat_width', cat);
+    await _p.setDouble('live_chan_width', chan);
+  }
+
   /// Random id created the first time the app runs on this computer.
   static String get deviceId {
     var id = _p.getString('device_id');

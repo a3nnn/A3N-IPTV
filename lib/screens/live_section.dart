@@ -296,16 +296,62 @@ class _LiveSectionState extends State<LiveSection> {
     if (_error != null) return ErrorView(message: _error!, onRetry: _load);
     if (_fullscreen) return _buildFullscreen();
 
-    return Row(
-      children: [
-        SizedBox(width: 250, child: _buildCategories()),
-        const VerticalDivider(width: 1),
-        SizedBox(width: 390, child: _buildChannels()),
-        const VerticalDivider(width: 1),
-        Expanded(child: _buildPreview()),
-      ],
-    );
+    return LayoutBuilder(builder: (context, box) {
+      final (cat, chan) = _fitWidths(box.maxWidth);
+      return Row(
+        children: [
+          SizedBox(width: cat, child: _buildCategories()),
+          _ResizeHandle(
+            onDrag: (d) => setState(() {
+              _catW = (cat + d).clamp(_catMin, _catMax);
+              _chanW = chan;
+            }),
+            onEnd: _saveWidths,
+            onReset: () => setState(() {
+              _catW = _catDefault;
+              _saveWidths();
+            }),
+          ),
+          SizedBox(width: chan, child: _buildChannels()),
+          _ResizeHandle(
+            onDrag: (d) => setState(() {
+              _catW = cat;
+              _chanW = (chan + d).clamp(_chanMin, _chanMax);
+            }),
+            onEnd: _saveWidths,
+            onReset: () => setState(() {
+              _chanW = _chanDefault;
+              _saveWidths();
+            }),
+          ),
+          Expanded(child: _buildPreview()),
+        ],
+      );
+    });
   }
+
+  // ---------------------------------------------- resizable columns
+  static const double _catDefault = 250, _catMin = 170, _catMax = 460;
+  static const double _chanDefault = 390, _chanMin = 280, _chanMax = 760;
+  static const double _previewMin = 360;
+
+  double _catW = Storage.liveCatWidth ?? _catDefault;
+  double _chanW = Storage.liveChanWidth ?? _chanDefault;
+
+  /// Column widths for this window size: the lists shrink back if the
+  /// video would get narrower than [_previewMin].
+  (double, double) _fitWidths(double total) {
+    var cat = _catW.clamp(_catMin, _catMax);
+    var chan = _chanW.clamp(_chanMin, _chanMax);
+    final room = total - 2 * _ResizeHandle.width - _previewMin;
+    if (cat + chan > room) {
+      chan = (room - cat).clamp(_chanMin, chan);
+      if (cat + chan > room) cat = (room - chan).clamp(_catMin, cat);
+    }
+    return (cat, chan);
+  }
+
+  void _saveWidths() => Storage.setLiveWidths(_catW, _chanW);
 
   Widget _video() => Video(key: _videoKey, controller: _svc.controller, controls: NoVideoControls, fill: Colors.black);
 
@@ -767,6 +813,49 @@ class _EpgRow extends StatelessWidget {
             child: Text(entry.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Line between two columns: drag it to resize, double-click to reset.
+class _ResizeHandle extends StatefulWidget {
+  static const double width = 7;
+  final ValueChanged<double> onDrag;
+  final VoidCallback onEnd;
+  final VoidCallback onReset;
+  const _ResizeHandle({required this.onDrag, required this.onEnd, required this.onReset});
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _active = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // In Arabic the columns run right → left, so the drag is mirrored.
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _active = true),
+      onExit: (_) => setState(() => _active = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (d) => widget.onDrag(rtl ? -d.delta.dx : d.delta.dx),
+        onHorizontalDragEnd: (_) => widget.onEnd(),
+        onDoubleTap: widget.onReset,
+        child: SizedBox(
+          width: _ResizeHandle.width,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: _active ? 3 : 1,
+              color: _active ? AppConfig.primary : AppConfig.divider,
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -17,9 +17,14 @@ class Storage {
     await _p.setString('password', p);
   }
 
+  /// The server this account signed in on last time.
+  static String? get host => _p.getString('host');
+  static Future<void> setHost(String h) => _p.setString('host', h);
+
   static Future<void> clearCredentials() async {
     await _p.remove('username');
     await _p.remove('password');
+    await _p.remove('host');
     await _p.remove('last_channel');
     await _p.remove('last_category');
   }

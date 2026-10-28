@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../config.dart';
+import '../data/category_filter.dart';
 import '../data/models.dart';
 import '../data/storage.dart';
 import '../data/xtream_api.dart';
@@ -88,8 +89,11 @@ class _LiveSectionState extends State<LiveSection> {
     try {
       final api = Session.api!;
       final results = await Future.wait<Object>([api.liveCategories(), api.liveStreams()]);
-      final cats = results[0] as List<Category>;
-      final chans = results[1] as List<LiveChannel>;
+      // Categories hidden with A3N Category Manager disappear with their channels.
+      final allCats = results[0] as List<Category>;
+      final hidden = await CategoryFilter.hiddenIds('live', allCats);
+      final cats = allCats.where((c) => !hidden.contains(c.id)).toList();
+      final chans = (results[1] as List<LiveChannel>).where((c) => !hidden.contains(c.categoryId)).toList();
       final counts = <String, int>{};
       for (final c in chans) {
         counts[c.categoryId] = (counts[c.categoryId] ?? 0) + 1;

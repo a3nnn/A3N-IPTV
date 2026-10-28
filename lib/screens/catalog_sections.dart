@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config.dart';
+import '../data/category_filter.dart';
 import '../data/models.dart';
 import '../data/storage.dart';
 import '../data/watch_history.dart';
@@ -51,8 +52,10 @@ class MoviesSection extends StatelessWidget {
   Future<CatalogData> _load() async {
     final api = Session.api!;
     final results = await Future.wait<Object>([api.vodCategories(), api.vodStreams()]);
-    final cats = results[0] as List<Category>;
-    final movies = results[1] as List<Movie>;
+    final allCats = results[0] as List<Category>;
+    final hidden = await CategoryFilter.hiddenIds('movies', allCats);
+    final cats = allCats.where((c) => !hidden.contains(c.id)).toList();
+    final movies = (results[1] as List<Movie>).where((m) => !hidden.contains(m.categoryId)).toList();
     return CatalogData(
       cats,
       movies
@@ -86,8 +89,10 @@ class SeriesSection extends StatelessWidget {
   Future<CatalogData> _load() async {
     final api = Session.api!;
     final results = await Future.wait<Object>([api.seriesCategories(), api.series()]);
-    final cats = results[0] as List<Category>;
-    final list = results[1] as List<Series>;
+    final allCats = results[0] as List<Category>;
+    final hidden = await CategoryFilter.hiddenIds('series', allCats);
+    final cats = allCats.where((c) => !hidden.contains(c.id)).toList();
+    final list = (results[1] as List<Series>).where((s) => !hidden.contains(s.categoryId)).toList();
     return CatalogData(
       cats,
       list

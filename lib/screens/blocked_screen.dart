@@ -5,6 +5,9 @@ import '../data/license_service.dart';
 import '../data/storage.dart';
 import '../widgets/brand.dart';
 import '../widgets/common.dart';
+import '../data/xtream_api.dart';
+import '../player/player_service.dart';
+import 'login_screen.dart';
 import 'start_gate.dart';
 import '../l10n.dart';
 
@@ -42,6 +45,19 @@ class _BlockedScreenState extends State<BlockedScreen> {
       _checking = false;
       _message = status.message;
     });
+  }
+
+  /// Back to the username / password screen (another account).
+  Future<void> _otherAccount() async {
+    await PlayerService.instance.stop();
+    await Storage.clearCredentials();
+    Session.api = null;
+    Session.account = null;
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   /// The title, by the reason sent from Supabase (A3N Manager).
@@ -103,6 +119,16 @@ class _BlockedScreenState extends State<BlockedScreen> {
                       label: Text(tr('Check again', 'تحقق مرة ثانية')),
                     ),
                   ),
+                  // Blocked because of the account (not the device): another
+                  // account can be used here.
+                  if (Storage.licenseReason != 'device') ...[
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _checking ? null : _otherAccount,
+                      icon: const Icon(Icons.person_outline_rounded),
+                      label: Text(tr('Sign in with another account', 'الدخول بحساب آخر')),
+                    ),
+                  ],
                 ],
               ),
             ),

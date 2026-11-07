@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/license_service.dart';
+import 'player/player_service.dart';
 
 import 'config.dart';
 import 'data/disk_cache.dart';
@@ -53,7 +54,13 @@ class _CloseWatcher with WindowListener {
   void onWindowClose() async {
     if (_closing) return;
     _closing = true;
-    await LicenseService.goOffline(); // at most 3 seconds
+    // The window disappears at once; "closed" is sent to A3N Manager
+    // behind it (at most 3 seconds), then the app ends.
+    try {
+      await PlayerService.instance.stop();
+    } catch (_) {}
+    await windowManager.hide();
+    await LicenseService.goOffline();
     await windowManager.destroy();
   }
 }

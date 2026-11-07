@@ -45,9 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Check in every 2 minutes: a block takes effect while the app is open,
+    // Check in every minute: a block takes effect while the app is open,
     // and Supabase shows this device as online.
-    _licenseTimer = Timer.periodic(const Duration(minutes: 2), (_) => _checkLicense());
+    _licenseTimer = Timer.periodic(const Duration(minutes: 1), (_) => _checkLicense());
     // Messages sent from A3N Manager (shown once, the app keeps working).
     LicenseService.notice.addListener(_showNotice);
     PlayerService.instance.fullscreen.addListener(_showNotice);

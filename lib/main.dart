@@ -3,6 +3,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'data/license_service.dart';
+
 import 'config.dart';
 import 'data/disk_cache.dart';
 import 'data/storage.dart';
@@ -37,8 +39,23 @@ Future<void> main() async {
     await windowManager.show();
     await windowManager.focus();
   });
+  // Closing the window: shown offline in A3N Manager right away.
+  await windowManager.setPreventClose(true);
+  windowManager.addListener(_CloseWatcher());
 
   runApp(const A3NApp());
+}
+
+class _CloseWatcher with WindowListener {
+  bool _closing = false;
+
+  @override
+  void onWindowClose() async {
+    if (_closing) return;
+    _closing = true;
+    await LicenseService.goOffline(); // at most 3 seconds
+    await windowManager.destroy();
+  }
 }
 
 class A3NApp extends StatelessWidget {
